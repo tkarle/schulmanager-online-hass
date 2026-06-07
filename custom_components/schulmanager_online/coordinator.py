@@ -202,6 +202,11 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             except Exception as err:
                 _LOGGER.debug("Event detection error: %s", err)
 
+            self.previous_data = {
+                student_id: {"schedule": student_data.get("schedule", [])}
+                for student_id, student_data in data.get("students", {}).items()
+            }
+
             return data
 
         except Exception as e:
@@ -245,6 +250,13 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             # Safely extract subject and room (handle None values)
             subject_data = actual_lesson.get("subject", {}) or {}
             room_data = actual_lesson.get("room", {}) or {}
+            original_lesson = self._get_original_lesson_data(lesson, actual_lesson)
+            original_subject_data = (
+                original_lesson.get("subject") or lesson.get("originalSubject") or {}
+            )
+            original_room_data = (
+                original_lesson.get("room") or lesson.get("originalRoom") or {}
+            )
             
             processed = {
                 "id": actual_lesson.get("lessonId", lesson.get("id")),
@@ -257,10 +269,34 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
                 "subject_abbreviation": subject_data.get("abbreviation", ""),
                 "room": room_data.get("name", ""),
                 "teachers": actual_lesson.get("teachers", []) or [],
-                "is_substitution": lesson.get("type") == "substitution",
+                "is_substitution": (
+                    lesson.get("type") == "substitution"
+                    or lesson.get("isSubstitution", False)
+                ),
                 "type": lesson.get("type", "regularLesson"),
                 "comment": lesson.get("comment", ""),
             }
+
+            original_subject = self._get_named_value(original_subject_data)
+            if original_subject:
+                processed["original_subject"] = original_subject
+                processed["original_subject_abbreviation"] = self._get_abbreviation_value(
+                    original_subject_data
+                )
+
+            original_room = self._get_named_value(original_room_data)
+            if original_room:
+                processed["original_room"] = original_room
+
+            original_teachers = original_lesson.get("teachers") or lesson.get("originalTeachers")
+            if not original_teachers and lesson.get("originalTeacher"):
+                original_teachers = [lesson["originalTeacher"]]
+            if original_teachers:
+                processed["original_teachers"] = original_teachers
+
+            original_comment = original_lesson.get("comment") or lesson.get("originalComment")
+            if original_comment:
+                processed["original_comment"] = original_comment
             
             # If class_hour_number or times are missing, calculate them
             processed = self._enhance_lesson_with_calculated_times(processed)
@@ -269,28 +305,11 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             teachers = processed["teachers"]
             if teachers and isinstance(teachers, list):
                 # Extract teacher names and abbreviations
-                teacher_info = []
-                for teacher in teachers:
-                    if isinstance(teacher, dict):
-                        firstname = teacher.get("firstname", "")
-                        lastname = teacher.get("lastname", "")
-                        full_name = f"{firstname} {lastname}".strip()
-                        abbrev = teacher.get("abbreviation", "")
-                        teacher_info.append({
-                            "name": full_name,
-                            "firstname": firstname,
-                            "lastname": lastname,
-                            "abbreviation": abbrev
-                        })
+                teacher_info = self._format_teacher_info(teachers)
                 processed["teachers"] = teacher_info
                 
                 # Add primary teacher info for easy access
-                if teacher_info:
-                    primary_teacher = teacher_info[0]
-                    processed["teacher"] = primary_teacher["abbreviation"]  # Keep abbreviation as main teacher field
-                    processed["teacher_firstname"] = primary_teacher["firstname"]
-                    processed["teacher_lastname"] = primary_teacher["lastname"]
-                    processed["teacher_abbreviation"] = primary_teacher["abbreviation"]
+                self._set_primary_teacher_fields(processed)
             
             # Handle original teacher for substitutions
             if processed["is_substitution"] and lesson.get("originalTeacher"):
@@ -303,6 +322,70 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             import traceback
             _LOGGER.debug(traceback.format_exc())
             return None
+
+    def _format_teacher_info(self, teachers: Any) -> List[Dict[str, Any]]:
+        """Normalize teacher lists to the integration's attribute shape."""
+        teacher_info = []
+        if not isinstance(teachers, list):
+            return teacher_info
+
+        for teacher in teachers:
+            if isinstance(teacher, dict):
+                firstname = teacher.get("firstname", "")
+                lastname = teacher.get("lastname", "")
+                full_name = teacher.get("name") or f"{firstname} {lastname}".strip()
+                abbrev = teacher.get("abbreviation", "")
+                teacher_info.append({
+                    "name": full_name,
+                    "firstname": firstname,
+                    "lastname": lastname,
+                    "abbreviation": abbrev
+                })
+
+        return teacher_info
+
+    def _set_primary_teacher_fields(self, lesson: Dict[str, Any]) -> None:
+        """Set convenience fields from the first teacher."""
+        teachers = lesson.get("teachers", [])
+        if not teachers:
+            return
+
+        primary_teacher = teachers[0]
+        lesson["teacher"] = primary_teacher["abbreviation"]
+        lesson["teacher_firstname"] = primary_teacher["firstname"]
+        lesson["teacher_lastname"] = primary_teacher["lastname"]
+        lesson["teacher_abbreviation"] = primary_teacher["abbreviation"]
+
+    def _get_named_value(self, value: Any) -> str:
+        """Return the display name from API objects or plain strings."""
+        if isinstance(value, dict):
+            return value.get("name", "")
+        if isinstance(value, str):
+            return value
+        return ""
+
+    def _get_abbreviation_value(self, value: Any) -> str:
+        """Return the abbreviation from API objects."""
+        if isinstance(value, dict):
+            return value.get("abbreviation", "")
+        return ""
+
+    def _get_original_lesson_data(
+        self, lesson: Dict[str, Any], actual_lesson: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract original lesson details from known Schulmanager API shapes."""
+        original_lessons = lesson.get("originalLessons")
+        if isinstance(original_lessons, list) and original_lessons:
+            first_lesson = original_lessons[0]
+            if isinstance(first_lesson, dict):
+                return first_lesson
+
+        for key in ("originalLesson", "lesson"):
+            candidate = lesson.get(key)
+            if isinstance(candidate, dict) and candidate is not actual_lesson:
+                return candidate
+
+        return lesson
 
     def _get_next_lesson(self, lessons: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Get the next upcoming lesson."""
@@ -521,7 +604,12 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
     def _detect_changes(self, student_id: int, current_schedule: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Detect changes between previous and current schedule."""
         if student_id not in self.previous_data or "schedule" not in self.previous_data[student_id]:
-            return {"has_changes": False, "changes": []}
+            changes = self._detect_original_lesson_changes(current_schedule)
+            return {
+                "has_changes": len(changes) > 0,
+                "changes": changes,
+                "change_count": len(changes)
+            }
         
         previous_schedule = self.previous_data[student_id]["schedule"]
         changes = []
@@ -539,6 +627,11 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
         
         # Check for changes in existing lessons
         for key, current_lesson in current_lookup.items():
+            original_change = self._build_original_lesson_change(current_lesson)
+            if original_change:
+                changes.append(original_change)
+                continue
+
             if key in previous_lookup:
                 previous_lesson = previous_lookup[key]
                 change = self._compare_lessons(previous_lesson, current_lesson)
@@ -572,6 +665,65 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             "changes": changes,
             "change_count": len(changes)
         }
+
+    def _detect_original_lesson_changes(
+        self, current_schedule: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Detect API-provided changes when no previous poll is available."""
+        changes = []
+
+        for current_lesson in current_schedule:
+            change = self._build_original_lesson_change(current_lesson)
+            if change:
+                changes.append(change)
+
+        return changes
+
+    def _build_original_lesson_change(
+        self, current: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Build a synthetic previous lesson from API original_* values."""
+        if not self._has_original_lesson_values(current):
+            return None
+
+        previous = dict(current)
+
+        if "original_subject" in current:
+            previous["subject"] = current["original_subject"]
+            previous["subject_name"] = current["original_subject"]
+            previous["subject_abbreviation"] = current.get("original_subject_abbreviation", "")
+
+        if "original_room" in current:
+            previous["room"] = current["original_room"]
+
+        if "original_teachers" in current:
+            previous["teachers"] = self._format_teacher_info(current["original_teachers"])
+            self._set_primary_teacher_fields(previous)
+
+        if "original_comment" in current:
+            previous["comment"] = current["original_comment"]
+
+        change = self._compare_lessons(previous, current)
+        if change:
+            change["previous"] = previous
+            change["description"] = (
+                f"Changes in {current.get('subject', 'Unknown')}: "
+                f"{', '.join([c['display_name'] for c in change['field_changes']])}"
+            )
+
+        return change
+
+    def _has_original_lesson_values(self, lesson: Dict[str, Any]) -> bool:
+        """Return true when the API exposed any before-value for the lesson."""
+        return any(
+            lesson.get(key) is not None
+            for key in (
+                "original_subject",
+                "original_room",
+                "original_teachers",
+                "original_comment",
+            )
+        )
 
     def _compare_lessons(self, previous: Dict[str, Any], current: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Compare two lessons and return change information if different."""

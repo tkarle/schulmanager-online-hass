@@ -60,7 +60,7 @@ def _format_lesson_for_attributes(lesson: Dict[str, Any]) -> Dict[str, Any]:
     # Handle regular lessons
     full_subject = lesson.get("subject_name", lesson.get("subject", ""))
     
-    return {
+    formatted = {
         "subject": full_subject,
         "subject_abbreviation": lesson.get("subject_abbreviation", ""),
         "subject_sanitized": _sanitize_subject_name(full_subject),
@@ -75,6 +75,27 @@ def _format_lesson_for_attributes(lesson: Dict[str, Any]) -> Dict[str, Any]:
         "date": lesson.get("date", ""),
         "class_hour": lesson.get("class_hour_number", "")
     }
+
+    if lesson.get("original_subject"):
+        formatted["original_subject"] = lesson["original_subject"]
+    if lesson.get("original_room"):
+        formatted["original_room"] = lesson["original_room"]
+    if lesson.get("original_teachers"):
+        formatted["original_teacher"] = _format_teachers_for_display(lesson["original_teachers"])
+    if lesson.get("original_comment"):
+        formatted["original_comment"] = lesson["original_comment"]
+
+    return formatted
+
+
+def _format_teachers_for_display(teachers: Any) -> str:
+    """Format teacher lists as a comma-separated abbreviation string."""
+    if not isinstance(teachers, list):
+        return ""
+
+    return ", ".join(
+        filter(None, [teacher.get("abbreviation", "") for teacher in teachers if isinstance(teacher, dict)])
+    )
 
 
 def _get_subject_for_display(lesson: Dict[str, Any]) -> str:
@@ -443,6 +464,13 @@ def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, A
         # Add field-level changes for modifications
         if change.get("type") == "modified" and "field_changes" in change:
             change_info["field_changes"] = change["field_changes"]
+            for field_change in change["field_changes"]:
+                field = field_change.get("field", "")
+                if field == "teachers":
+                    field = "teacher"
+                if field:
+                    change_info[f"{field}_old"] = field_change.get("previous", "")
+                    change_info[f"{field}_new"] = field_change.get("current", "")
         
         # Add lesson details using unified formatting
         if change.get("current"):
@@ -451,7 +479,7 @@ def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, A
             change_info["current"] = {
                 "subject": formatted_current["subject"],
                 "room": formatted_current["room"],
-                "teacher": ", ".join([t.get("abbreviation", "") for t in current.get("teachers", [])]),
+                "teacher": _format_teachers_for_display(current.get("teachers", [])),
                 "time": formatted_current["time"],
             }
         
@@ -461,7 +489,7 @@ def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, A
             change_info["previous"] = {
                 "subject": formatted_previous["subject"],
                 "room": formatted_previous["room"],
-                "teacher": ", ".join([t.get("abbreviation", "") for t in previous.get("teachers", [])]),
+                "teacher": _format_teachers_for_display(previous.get("teachers", [])),
                 "time": formatted_previous["time"],
             }
         

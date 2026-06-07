@@ -580,7 +580,9 @@ class SchulmanagerAPI:
                 "parameters": {
                     "student": student,  # Use full student object instead of just ID
                     "start": start_date.isoformat(),
-                    "end": end_date.isoformat()
+                    "end": end_date.isoformat(),
+                    "startDate": start_date.isoformat(),
+                    "endDate": end_date.isoformat()
                 }
             }
         ]

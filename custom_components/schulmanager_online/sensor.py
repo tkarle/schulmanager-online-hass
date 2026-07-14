@@ -155,6 +155,32 @@ EXAM_SENSOR_DESCRIPTIONS = [
 ]
 
 
+def _empty_student_data(student_info: Dict[str, Any], status: str = "not_loaded") -> Dict[str, Any]:
+    """Return stable empty student data for sensor rendering."""
+    return {
+        "info": student_info,
+        "schedule": [],
+        "current_lesson": None,
+        "next_lesson": None,
+        "today_lessons": [],
+        "today_changes": [],
+        "tomorrow_lessons": [],
+        "next_school_day": [],
+        "this_week": [],
+        "next_week": [],
+        "changes_detected": {
+            "has_changes": False,
+            "changes": [],
+            "change_count": 0,
+        },
+        "homework": {"homeworks": []},
+        "grades": {"grades": []},
+        "exams": {"exams": [], "data": []},
+        "_data_status": status,
+        "_last_error": "",
+    }
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -307,7 +333,7 @@ class SchulmanagerOnlineSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         student_data = self.coordinator.get_student_data(self.student_id)
         if not student_data:
-            return None
+            student_data = _empty_student_data(self.student_info)
 
         # Schedule sensors
         if self.entity_description.key == SENSOR_CURRENT_LESSON:
@@ -356,7 +382,7 @@ class SchulmanagerOnlineSensor(CoordinatorEntity, SensorEntity):
         """Return the state attributes."""
         student_data = self.coordinator.get_student_data(self.student_id)
         if not student_data:
-            return {}
+            student_data = _empty_student_data(self.student_info)
 
         attributes = {
             ATTR_STUDENT_ID: self.student_id,
@@ -381,6 +407,9 @@ class SchulmanagerOnlineSensor(CoordinatorEntity, SensorEntity):
         if "info" in student_data:
             student_info = student_data["info"]
             attributes[ATTR_CLASS_NAME] = student_info.get("classId", "")
+
+        attributes["data_status"] = student_data.get("_data_status", "loaded")
+        attributes["last_error"] = student_data.get("_last_error", "")
 
         # Schedule sensors
         if self.entity_description.key == SENSOR_CURRENT_LESSON:

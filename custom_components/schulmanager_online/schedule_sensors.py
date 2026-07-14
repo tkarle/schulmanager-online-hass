@@ -26,6 +26,29 @@ from .const import (
     ATTR_TEACHER,
 )
 
+def _as_list(value: Any) -> List[Any]:
+    """Return value as a list, treating unavailable HA states as empty."""
+    if isinstance(value, list):
+        return value
+    return []
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    """Return value as a dict, treating unavailable HA states as empty."""
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _as_lesson_list(value: Any) -> List[Dict[str, Any]]:
+    """Return only dict lessons from a value that should be a list."""
+    return [item for item in _as_list(value) if isinstance(item, dict)]
+
+
+def _as_lesson(value: Any) -> Dict[str, Any]:
+    """Return value as a lesson dict."""
+    return value if isinstance(value, dict) else {}
+
 
 def _format_lesson_for_attributes(lesson: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -37,6 +60,7 @@ def _format_lesson_for_attributes(lesson: Dict[str, Any]) -> Dict[str, Any]:
     - subject_sanitized: Clean subject name without parentheses and commas (e.g., "Evangelische Religionslehre")
     - For free hours: subject fields are empty, type is "freeHour"
     """
+    lesson = _as_lesson(lesson)
     lesson_type = lesson.get("type", "regularLesson")
     
     # Handle free hours
@@ -131,14 +155,15 @@ def _sanitize_subject_name(subject: str) -> str:
 
 def _format_lessons_list_attributes(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Format a list of lessons with consistent attribute structure."""
-    return [_format_lesson_for_attributes(lesson) for lesson in lessons]
+    return [_format_lesson_for_attributes(lesson) for lesson in _as_lesson_list(lessons)]
 
 
 def get_current_lesson_state(student_data: Dict[str, Any]) -> Optional[str]:
     """Get the state for current lesson sensor."""
-    current_lesson = student_data.get("current_lesson")
+    current_lesson = _as_dict(student_data).get("current_lesson")
     if not current_lesson:
         return "No current lesson"
+    current_lesson = _as_lesson(current_lesson)
     
     subject = _get_subject_for_display(current_lesson)
     room = current_lesson.get("room", "")
@@ -150,9 +175,10 @@ def get_current_lesson_state(student_data: Dict[str, Any]) -> Optional[str]:
 
 def get_current_lesson_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for current lesson sensor."""
-    current_lesson = student_data.get("current_lesson")
+    current_lesson = _as_dict(student_data).get("current_lesson")
     if not current_lesson:
         return {"status": "no_lesson"}
+    current_lesson = _as_lesson(current_lesson)
 
     attributes = {"status": "in_lesson"}
     
@@ -169,9 +195,13 @@ def get_current_lesson_attributes(student_data: Dict[str, Any]) -> Dict[str, Any
     })
 
     # Teacher info
-    teachers = current_lesson.get("teachers", [])
+    teachers = _as_list(current_lesson.get("teachers", []))
     if teachers:
-        teacher_names = [t.get("name", t.get("abbreviation", "")) for t in teachers]
+        teacher_names = [
+            t.get("name", t.get("abbreviation", ""))
+            for t in teachers
+            if isinstance(t, dict)
+        ]
         attributes[ATTR_TEACHER] = ", ".join(filter(None, teacher_names))
 
     # Original teacher for substitutions
@@ -184,9 +214,10 @@ def get_current_lesson_attributes(student_data: Dict[str, Any]) -> Dict[str, Any
 
 def get_next_lesson_state(student_data: Dict[str, Any]) -> Optional[str]:
     """Get the state for next lesson sensor."""
-    next_lesson = student_data.get("next_lesson")
+    next_lesson = _as_dict(student_data).get("next_lesson")
     if not next_lesson:
         return "No upcoming lessons"
+    next_lesson = _as_lesson(next_lesson)
     
     subject = _get_subject_for_display(next_lesson)
     start_time = next_lesson.get("start_time", "")
@@ -198,9 +229,10 @@ def get_next_lesson_state(student_data: Dict[str, Any]) -> Optional[str]:
 
 def get_next_lesson_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for next lesson sensor."""
-    next_lesson = student_data.get("next_lesson")
+    next_lesson = _as_dict(student_data).get("next_lesson")
     if not next_lesson:
         return {"status": "no_lessons"}
+    next_lesson = _as_lesson(next_lesson)
 
     attributes = {"status": "upcoming"}
     
@@ -217,9 +249,13 @@ def get_next_lesson_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     })
 
     # Teacher info
-    teachers = next_lesson.get("teachers", [])
+    teachers = _as_list(next_lesson.get("teachers", []))
     if teachers:
-        teacher_names = [t.get("name", t.get("abbreviation", "")) for t in teachers]
+        teacher_names = [
+            t.get("name", t.get("abbreviation", ""))
+            for t in teachers
+            if isinstance(t, dict)
+        ]
         attributes[ATTR_TEACHER] = ", ".join(filter(None, teacher_names))
 
     # Original teacher for substitutions
@@ -232,13 +268,13 @@ def get_next_lesson_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_today_lessons_count(student_data: Dict[str, Any]) -> str:
     """Get count of today's lessons."""
-    today_lessons = student_data.get("today_lessons", [])
+    today_lessons = _as_lesson_list(_as_dict(student_data).get("today_lessons", []))
     return str(len(today_lessons))
 
 
 def get_today_lessons_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for today's lessons sensor."""
-    today_lessons = student_data.get("today_lessons", [])
+    today_lessons = _as_lesson_list(_as_dict(student_data).get("today_lessons", []))
     
     # Use utility functions for consistent processing (same as tomorrow sensor)
     actual_lessons = filter_actual_lessons(today_lessons)
@@ -273,13 +309,13 @@ def get_today_lessons_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]
 
 def get_tomorrow_lessons_count(student_data: Dict[str, Any]) -> str:
     """Get count of tomorrow's lessons."""
-    tomorrow_lessons = student_data.get("tomorrow_lessons", [])
+    tomorrow_lessons = _as_lesson_list(_as_dict(student_data).get("tomorrow_lessons", []))
     return str(len(tomorrow_lessons))
 
 
 def get_tomorrow_lessons_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for tomorrow's lessons sensor."""
-    tomorrow_lessons = student_data.get("tomorrow_lessons", [])
+    tomorrow_lessons = _as_lesson_list(_as_dict(student_data).get("tomorrow_lessons", []))
     
     # Use utility functions for consistent processing
     actual_lessons = filter_actual_lessons(tomorrow_lessons)
@@ -314,14 +350,14 @@ def get_tomorrow_lessons_attributes(student_data: Dict[str, Any]) -> Dict[str, A
 
 def get_today_changes_count(student_data: Dict[str, Any]) -> str:
     """Get count of today's changes."""
-    today_changes = student_data.get("today_changes", [])
+    today_changes = _as_lesson_list(_as_dict(student_data).get("today_changes", []))
     count = len(today_changes)
     return str(count)
 
 
 def get_today_changes_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for today's changes sensor."""
-    today_changes = student_data.get("today_changes", [])
+    today_changes = _as_lesson_list(_as_dict(student_data).get("today_changes", []))
     
     changes_list = []
     for change in today_changes:
@@ -349,7 +385,7 @@ def get_today_changes_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]
 
 def get_this_week_summary(student_data: Dict[str, Any]) -> str:
     """Get this week summary state."""
-    this_week = student_data.get("this_week", [])
+    this_week = _as_lesson_list(_as_dict(student_data).get("this_week", []))
     if not this_week:
         return "No lessons this week"
     
@@ -358,7 +394,7 @@ def get_this_week_summary(student_data: Dict[str, Any]) -> str:
 
 def get_this_week_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for this week sensor."""
-    this_week = student_data.get("this_week", [])
+    this_week = _as_lesson_list(_as_dict(student_data).get("this_week", []))
     
     # Use utility functions for consistent processing
     actual_lessons = filter_actual_lessons(this_week)
@@ -393,7 +429,7 @@ def get_this_week_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_next_week_summary(student_data: Dict[str, Any]) -> str:
     """Get next week summary state."""
-    next_week = student_data.get("next_week", [])
+    next_week = _as_lesson_list(_as_dict(student_data).get("next_week", []))
     if not next_week:
         return "No lessons next week"
     
@@ -402,7 +438,7 @@ def get_next_week_summary(student_data: Dict[str, Any]) -> str:
 
 def get_next_week_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for next week sensor."""
-    next_week = student_data.get("next_week", [])
+    next_week = _as_lesson_list(_as_dict(student_data).get("next_week", []))
     
     # Use utility functions for consistent processing
     actual_lessons = filter_actual_lessons(next_week)
@@ -432,7 +468,7 @@ def get_next_week_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_changes_detected_state(student_data: Dict[str, Any]) -> str:
     """Get changes detected state."""
-    changes_data = student_data.get("changes_detected", {})
+    changes_data = _as_dict(_as_dict(student_data).get("changes_detected", {}))
     
     if not changes_data.get("has_changes", False):
         return "No changes"
@@ -445,7 +481,8 @@ def get_changes_detected_state(student_data: Dict[str, Any]) -> str:
 
 def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for changes detected sensor."""
-    changes_data = student_data.get("changes_detected", {})
+    changes_data = _as_dict(_as_dict(student_data).get("changes_detected", {}))
+    changes = _as_list(changes_data.get("changes", []))
     
     attributes = {
         "has_changes": changes_data.get("has_changes", False),
@@ -453,7 +490,9 @@ def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, A
         "changes": [],
     }
 
-    for change in changes_data.get("changes", []):
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
         change_info = {
             "type": change.get("type", ""),
             "date": change.get("date", ""),
@@ -462,9 +501,12 @@ def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, A
         }
         
         # Add field-level changes for modifications
-        if change.get("type") == "modified" and "field_changes" in change:
-            change_info["field_changes"] = change["field_changes"]
-            for field_change in change["field_changes"]:
+        field_changes = _as_list(change.get("field_changes", []))
+        if change.get("type") == "modified" and field_changes:
+            change_info["field_changes"] = field_changes
+            for field_change in field_changes:
+                if not isinstance(field_change, dict):
+                    continue
                 field = field_change.get("field", "")
                 if field == "teachers":
                     field = "teacher"
@@ -500,7 +542,7 @@ def get_changes_detected_attributes(student_data: Dict[str, Any]) -> Dict[str, A
 
 def get_next_school_day_lessons_count(student_data: Dict[str, Any]) -> str:
     """Get next school day lessons count state."""
-    next_school_day = student_data.get("next_school_day", [])
+    next_school_day = _as_lesson_list(_as_dict(student_data).get("next_school_day", []))
     if not next_school_day:
         return "No upcoming school day"
     
@@ -509,7 +551,7 @@ def get_next_school_day_lessons_count(student_data: Dict[str, Any]) -> str:
 
 def get_next_school_day_lessons_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for next school day lessons sensor."""
-    next_school_day = student_data.get("next_school_day", [])
+    next_school_day = _as_lesson_list(_as_dict(student_data).get("next_school_day", []))
     
     # Use utility functions for consistent processing
     actual_lessons = filter_actual_lessons(next_school_day)

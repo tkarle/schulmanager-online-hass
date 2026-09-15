@@ -320,7 +320,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
                 processed_lessons.append(processed_lesson)
         
         # Sort by date and time
-        processed_lessons.sort(key=lambda x: (x.get("date", ""), x.get("start_time", "")))
+        processed_lessons.sort(key=lambda x: (x.get("date") or "", x.get("start_time") or ""))
         
         # Post-process to assign correct hour numbers by date
         processed_lessons = self._assign_correct_hour_numbers(processed_lessons)

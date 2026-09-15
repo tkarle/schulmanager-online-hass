@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10
+
+- Retry schedule requests once when Schulmanager returns authentication or nested API status 401/403.
+- Refresh the authentication and bundle-version cache before retrying rejected requests.
+- Handle lessons without start times or class-hour numbers during sorting (Issue #9).
+
 ## 1.0.9
 
 - Keep Schulmanager sensor list and dictionary attributes stable when API data is missing, unavailable, or partially malformed.

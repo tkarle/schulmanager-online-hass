@@ -401,11 +401,21 @@ class SchulmanagerAPI:
             response_text = await response.text()
             _LOGGER.debug("📄 Response body (first 500 chars): %s", response_text[:500])
             
-            if response.status == 401:
-                # Token might be invalid, try to re-authenticate once
-                _LOGGER.debug("🔄 Got 401, trying to re-authenticate...")
-                await self.authenticate()
+            if response.status in (401, 403):
+                # A 403 can also mean that the web app bundle version changed.
+                # Refresh authentication and the cached bundle once, then retry.
+                _LOGGER.debug(
+                    "🔄 Got %d, refreshing authentication and bundle version...",
+                    response.status,
+                )
+                self.token = None
+                self.token_expires = None
+                self.bundle_version = None
+                self.bundle_version_expires = None
+                await self.authenticate(institution_id=self.institution_id)
+                bundle_version = await self._ensure_bundle_version()
                 headers = {"Authorization": f"Bearer {self.token}"}
+                payload["bundleVersion"] = bundle_version
                 
                 _LOGGER.debug("🔄 Retrying API call with new token...")
                 async with self.session.post(CALLS_URL, json=payload, headers=headers) as retry_response:
@@ -592,8 +602,31 @@ class SchulmanagerAPI:
                          student_id, start_date, end_date)
             _LOGGER.debug("Schedule request payload: %s", requests)
             
-            response = await self._make_api_call(requests)
-            results = response.get("results", [])
+            response = None
+            schedule_data = None
+            for attempt in range(2):
+                response = await self._make_api_call(requests)
+                results = response.get("results", [])
+                schedule_data = results[0] if results else None
+                nested_status = schedule_data.get("status") if isinstance(schedule_data, dict) else None
+                if nested_status not in (401, 403) or attempt == 1:
+                    break
+
+                if isinstance(schedule_data, dict):
+                    diagnostic = {
+                        key: schedule_data.get(key)
+                        for key in ("status", "error", "message", "code")
+                        if schedule_data.get(key) is not None
+                    }
+                    _LOGGER.warning("Schedule API rejected request: %s", diagnostic)
+                _LOGGER.warning(
+                    "Schedule API returned nested status %s; refreshing authentication and retrying",
+                    nested_status,
+                )
+                self.token = None
+                self.token_expires = None
+                self.bundle_version = None
+                self.bundle_version_expires = None
             
             _LOGGER.debug("Schedule API response - Got %d results", len(results))
             

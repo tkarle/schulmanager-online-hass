@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0
+## 1.1.2
 
 - Fix multi-school accounts never getting HA devices created (`UnboundLocalError` in `async_setup_entry`, silently swallowed).
 - Fix the `get_grades` request to use the current `moduleName`/`endpointName` API format instead of the legacy `method`/`data` shape that the backend appears to have dropped (unverified against a live account - grades is opt-in).

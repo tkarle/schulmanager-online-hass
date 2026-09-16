@@ -9,6 +9,12 @@ Home Assistant's Integrations page does not read icons from the repository's
 alternative concepts remain available in `images/alternatives/` as SVG source
 files.
 
+### Versioning note
+
+The project uses a new minor version after `1.0.9` to avoid the known
+single-digit to double-digit release ordering issue affecting GitHub/HACS
+release discovery. The corrected release line is `1.1.x`.
+
 A comprehensive Home Assistant integration for **[Schulmanager Online](https://login.schulmanager-online.de/)** with extended sensors and calendar integration. A powerful custom UI card will be available in the future.
 
 ## ✨ Features

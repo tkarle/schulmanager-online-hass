@@ -8,12 +8,26 @@ from typing import Any, Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import SchulmanagerAPI, SchulmanagerAPIError
 from .const import DEFAULT_LOOKAHEAD_WEEKS, DOMAIN, UPDATE_INTERVAL
 from .free_hours_utils import add_free_hours_to_schedule, parse_time_to_minutes, format_minutes_to_time
+from .student_utils import get_api_for_student
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _now_local() -> datetime:
+    """Current wall-clock time in Home Assistant's configured time zone.
+
+    Uses ``dt_util.now()`` instead of ``datetime.now()`` so "today"/"current
+    lesson" calculations follow HA's configured time zone rather than the
+    host system's (which can differ, e.g. a container running in UTC). The
+    tzinfo is stripped so it stays comparable with the naive datetimes parsed
+    from the school's local date/time strings.
+    """
+    return dt_util.now().replace(tzinfo=None)
 
 
 class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
@@ -42,19 +56,6 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=UPDATE_INTERVAL),
         )
     
-    def _get_api_for_student(self, student: Dict[str, Any]):
-        """Get the correct API instance for a student."""
-        institution_id = student.get("_institution_id")
-        
-        if institution_id and institution_id in self.api_instances:
-            return self.api_instances[institution_id]
-        
-        # Fallback: return first available API instance
-        if self.api_instances:
-            return next(iter(self.api_instances.values()))
-        
-        raise ValueError(f"No API instance found for student {student.get('id')}")
-
     async def _async_update_data(self) -> Dict[str, Any]:
         """Update data via library."""
         try:
@@ -87,12 +88,17 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             include_exams = self.options.get("include_exams", True)
             
             # Calculate date range
-            today = datetime.now().date()
+            today = _now_local().date()
             start_date = today - timedelta(days=today.weekday())  # Monday of this week
             end_date = start_date + timedelta(weeks=weeks_ahead)
             
-            data = {"students": {}, "last_update": datetime.now().isoformat()}
-            
+            data = {"students": {}, "last_update": _now_local().isoformat()}
+
+            # Class hours (period-to-time grid) are institution-wide, not
+            # per-student, so fetch each institution's grid at most once per
+            # refresh cycle instead of once per student.
+            class_hours_by_institution: Dict[Any, Any] = {}
+
             # Get data for each student
             for student in self.students:
                 student_id = student.get("id")
@@ -103,20 +109,26 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
                 
                 try:
                     # Get the correct API instance for this student
-                    student_api = self._get_api_for_student(student)
+                    student_api = get_api_for_student(student, self.api_instances)
                     
                     # Get schedule and class hours
                     schedule_data = await student_api.get_schedule(
                         student_id, start_date, end_date
                     )
                     
-                    # Get class hours configuration (for free hour detection)
-                    try:
-                        class_hours_data = await student_api.get_class_hours()
-                        data["class_hours"] = class_hours_data
-                    except Exception as e:
-                        _LOGGER.warning(f"Failed to fetch class hours: {e}")
-                        data["class_hours"] = []
+                    # Get class hours configuration (for free hour detection),
+                    # cached per institution for the duration of this refresh
+                    institution_id = student.get("_institution_id")
+                    if institution_id in class_hours_by_institution:
+                        class_hours_data = class_hours_by_institution[institution_id]
+                    else:
+                        try:
+                            class_hours_data = await student_api.get_class_hours()
+                        except Exception as e:
+                            _LOGGER.warning(f"Failed to fetch class hours: {e}")
+                            class_hours_data = []
+                        class_hours_by_institution[institution_id] = class_hours_data
+                    data["class_hours"] = class_hours_data
                     
                     # Process regular schedule data
                     processed_schedule = self._process_schedule_data(schedule_data)
@@ -294,7 +306,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             return None
 
         data = copy.deepcopy(self.data)
-        data["last_update"] = datetime.now().isoformat()
+        data["last_update"] = _now_local().isoformat()
         for student_data in data.get("students", {}).values():
             if isinstance(student_data, dict):
                 student_data["_data_status"] = "stale"
@@ -454,10 +466,10 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             return
 
         primary_teacher = teachers[0]
-        lesson["teacher"] = primary_teacher["abbreviation"]
-        lesson["teacher_firstname"] = primary_teacher["firstname"]
-        lesson["teacher_lastname"] = primary_teacher["lastname"]
-        lesson["teacher_abbreviation"] = primary_teacher["abbreviation"]
+        lesson["teacher"] = primary_teacher.get("abbreviation", "")
+        lesson["teacher_firstname"] = primary_teacher.get("firstname", "")
+        lesson["teacher_lastname"] = primary_teacher.get("lastname", "")
+        lesson["teacher_abbreviation"] = primary_teacher.get("abbreviation", "")
 
     def _get_named_value(self, value: Any) -> str:
         """Return the display name from API objects or plain strings."""
@@ -492,7 +504,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_next_lesson(self, lessons: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Get the next upcoming lesson."""
-        now = datetime.now()
+        now = _now_local()
         
         for lesson in lessons:
             lesson_datetime = self._parse_lesson_datetime(lesson)
@@ -503,13 +515,13 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_today_lessons(self, lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get today's lessons."""
-        today = datetime.now().date().isoformat()
+        today = _now_local().date().isoformat()
         
         return [lesson for lesson in lessons if lesson.get("date") == today]
 
     def _get_tomorrow_lessons(self, lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get tomorrow's lessons (literal next calendar day)."""
-        tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
+        tomorrow = (_now_local().date() + timedelta(days=1)).isoformat()
         return [lesson for lesson in lessons if lesson.get("date") == tomorrow]
 
     def _parse_lesson_datetime(self, lesson: Dict[str, Any]) -> Optional[datetime]:
@@ -629,7 +641,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_current_lesson(self, lessons: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Get the currently active lesson."""
-        now = datetime.now()
+        now = _now_local()
         
         for lesson in lessons:
             lesson_start = self._parse_lesson_datetime(lesson)
@@ -642,7 +654,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_today_changes(self, lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get today's lessons that have changes (substitutions, cancellations)."""
-        today = datetime.now().date().isoformat()
+        today = _now_local().date().isoformat()
         changes = []
         
         for lesson in lessons:
@@ -655,7 +667,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_this_week_lessons(self, lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get all lessons for this week (Monday to Friday)."""
-        now = datetime.now()
+        now = _now_local()
         # Get Monday of this week
         monday = now - timedelta(days=now.weekday())
         friday = monday + timedelta(days=4)
@@ -673,7 +685,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_next_week_lessons(self, lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get all lessons for next week (Monday to Friday)."""
-        now = datetime.now()
+        now = _now_local()
         # Get Monday of next week
         next_monday = now + timedelta(days=(7 - now.weekday()))
         next_friday = next_monday + timedelta(days=4)
@@ -691,7 +703,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
     def _get_next_school_day_lessons(self, lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Get lessons for the next school day (skipping weekends)."""
-        now = datetime.now()
+        now = _now_local()
         current_date = now.date()
         
         # Find next school day (Monday-Friday)

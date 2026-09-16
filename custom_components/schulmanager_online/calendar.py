@@ -105,19 +105,18 @@ class SchulmanagerOnlineCalendar(CoordinatorEntity, CalendarEntity):
         self.student_name = student_name
         self.calendar_type = calendar_type
         
-        # Create safe name for entity ID
-        safe_name = student_name.lower().replace(" ", "_").replace("-", "_")
-        safe_name = "".join(c for c in safe_name if c.isalnum() or c == "_")
-        
         # Set entity attributes
         calendar_names = {
             "schedule": "Lessons",
-            "homework": "Homework", 
+            "homework": "Homework",
             "exams": "Exams"
         }
-        
+
         self._attr_name = f"{calendar_names[calendar_type]} - {student_name}"
-        self._attr_unique_id = f"schulmanager_{calendar_type}_{safe_name}"
+        # unique_id is keyed by the stable student_id (not the name, which can
+        # collide between siblings or change) - see the migration in __init__.py
+        # for entities created before this fix.
+        self._attr_unique_id = f"schulmanager_{calendar_type}_{student_id}"
         
         # Set icons
         icons = {

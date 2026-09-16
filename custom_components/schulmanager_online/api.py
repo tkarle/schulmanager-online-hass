@@ -659,28 +659,6 @@ class SchulmanagerAPI:
                          student_id, start_date, end_date)
             raise SchulmanagerAPIError(f"Failed to get schedule: {e}") from e
 
-    async def get_class_hours(self, class_id: int) -> Dict[str, Any]:
-        """Get class hours definition."""
-        requests = [
-            {
-                "method": "schedules/get-class-hours",
-                "data": {"classId": class_id}
-            }
-        ]
-        
-        try:
-            response = await self._make_api_call(requests)
-            responses = response.get("results", [])
-            
-            if not responses:
-                raise SchulmanagerAPIError("No class hours response")
-            
-            return responses[0]
-            
-        except Exception as e:
-            _LOGGER.error("Failed to get class hours for class %d: %s", class_id, e)
-            raise SchulmanagerAPIError(f"Failed to get class hours: {e}") from e
-
     async def get_homework(self, student_id: int) -> Dict[str, Any]:
         """Get homework for a student using the classbook module."""
         requests = [
@@ -733,22 +711,28 @@ class SchulmanagerAPI:
 
     async def get_grades(self, student_id: int) -> Dict[str, Any]:
         """Get grades for a student."""
+        # NOTE: previously used the legacy {"method", "data"} request shape,
+        # which the backend appears to have dropped (every other endpoint has
+        # migrated to moduleName/endpointName/parameters). Aligned with the
+        # same convention used by get_homework/get_exams; not yet verified
+        # against a live account since grades is an opt-in feature.
         requests = [
             {
-                "method": "grades/get-grades",
-                "data": {"studentId": student_id}
+                "moduleName": "grades",
+                "endpointName": "get-grades",
+                "parameters": {"student": {"id": student_id}}
             }
         ]
-        
+
         try:
             response = await self._make_api_call(requests)
             responses = response.get("results", [])
-            
+
             if not responses:
                 raise SchulmanagerAPIError("No grades response")
-            
+
             grades_data = responses[0]
-            grades = grades_data.get("grades", [])
+            grades = grades_data.get("grades", grades_data.get("data", []))
             
             _LOGGER.debug("Found %d grades for student %d", len(grades), student_id)
             

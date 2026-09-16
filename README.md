@@ -1,5 +1,14 @@
 # 🎓 Schulmanager Online Integration for Home Assistant
 
+## Integration icon
+
+Home Assistant's Integrations page does not read icons from the repository's
+`images/` directory. The official branding repository must contain the icon at
+`custom_integrations/schulmanager_online/icon.png` (and optionally
+`icon@2x.png`). The selected integration icon is `images/icon.svg`. The three
+alternative concepts remain available in `images/alternatives/` as SVG source
+files.
+
 A comprehensive Home Assistant integration for **[Schulmanager Online](https://login.schulmanager-online.de/)** with extended sensors and calendar integration. A powerful custom UI card will be available in the future.
 
 ## ✨ Features

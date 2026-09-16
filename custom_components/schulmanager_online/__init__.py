@@ -264,7 +264,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
 
     if config_entry.version < 2:
         # Migration from version 1 to 2 (no data changes required)
-        config_entry.version = 2
+        hass.config_entries.async_update_entry(config_entry, version=2)
 
     if config_entry.version < 3:
         # Version 3: sensor/calendar unique_ids switched from being keyed by
@@ -272,7 +272,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
         # to the stable student_id. Rewrite existing registry entries in
         # place so entity history/customizations survive the upgrade.
         await _async_migrate_unique_ids_to_student_id(hass, config_entry)
-        config_entry.version = 3
+        hass.config_entries.async_update_entry(config_entry, version=3)
 
     _LOGGER.info("Migration to version %s successful", config_entry.version)
     return True

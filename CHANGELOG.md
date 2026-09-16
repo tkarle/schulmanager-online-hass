@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.3
+
+- Fix config entry migration crashing on startup (`AttributeError: version cannot be changed directly, use async_update_entry instead`) on recent Home Assistant Core versions (confirmed on 2026.9.2). The 1.1.2 migration to version 3 (unique_id fix) set `config_entry.version` directly instead of going through `hass.config_entries.async_update_entry(...)`.
+
 ## 1.1.2
 
 - Fix multi-school accounts never getting HA devices created (`UnboundLocalError` in `async_setup_entry`, silently swallowed).

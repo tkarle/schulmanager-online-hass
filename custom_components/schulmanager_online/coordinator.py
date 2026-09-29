@@ -347,9 +347,13 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Extract actual lesson data (API structure: lesson.actualLesson contains the details)
             actual_lesson = lesson.get("actualLesson", {}) or {}
+            event_data = lesson.get("event", {}) or {}
             class_hour = lesson.get("classHour", {}) or {}
+            lesson_type = lesson.get("type", "regularLesson")
             if not isinstance(actual_lesson, dict):
                 actual_lesson = {}
+            if not isinstance(event_data, dict):
+                event_data = {}
             if not isinstance(class_hour, dict):
                 class_hour = {}
             
@@ -365,6 +369,12 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             # Safely extract subject and room (handle None values)
             subject_data = actual_lesson.get("subject", {}) or {}
             room_data = actual_lesson.get("room", {}) or {}
+            event_title = event_data.get("text", "") if lesson.get("type") == "event" else ""
+            event_rooms = event_data.get("rooms", [])
+            event_room = ""
+            if isinstance(event_rooms, list) and event_rooms and isinstance(event_rooms[0], dict):
+                event_room = event_rooms[0].get("name", "")
+            lesson_teachers = event_data.get("teachers", []) if lesson.get("type") == "event" else actual_lesson.get("teachers", [])
             original_lesson = self._get_original_lesson_data(lesson, actual_lesson)
             original_subject_data = (
                 original_lesson.get("subject") or lesson.get("originalSubject") or {}
@@ -372,6 +382,10 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
             original_room_data = (
                 original_lesson.get("room") or lesson.get("originalRoom") or {}
             )
+            original_subject = self._get_named_value(original_subject_data)
+            original_room = self._get_named_value(original_room_data)
+            is_cancelled = lesson_type == "cancelledLesson"
+            display_subject = event_title or subject_data.get("name", "")
             
             processed = {
                 "id": actual_lesson.get("lessonId", lesson.get("id")),
@@ -379,27 +393,25 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
                 "class_hour_number": class_hour_num,
                 "start_time": class_hour.get("from"),
                 "end_time": class_hour.get("until"),
-                "subject": subject_data.get("name", ""),
-                "subject_name": subject_data.get("name", ""),
+                "subject": display_subject,
+                "subject_name": display_subject,
                 "subject_abbreviation": subject_data.get("abbreviation", ""),
-                "room": room_data.get("name", ""),
-                "teachers": actual_lesson.get("teachers", []) or [],
+                "room": event_room or room_data.get("name", ""),
+                "teachers": lesson_teachers or [],
                 "is_substitution": (
-                    lesson.get("type") == "substitution"
-                    or lesson.get("isSubstitution", False)
+                    not is_cancelled
+                    and (lesson_type == "substitution" or lesson.get("isSubstitution", False))
                 ),
-                "type": lesson.get("type", "regularLesson"),
+                "type": lesson_type,
                 "comment": lesson.get("comment", ""),
             }
 
-            original_subject = self._get_named_value(original_subject_data)
             if original_subject:
                 processed["original_subject"] = original_subject
                 processed["original_subject_abbreviation"] = self._get_abbreviation_value(
                     original_subject_data
                 )
 
-            original_room = self._get_named_value(original_room_data)
             if original_room:
                 processed["original_room"] = original_room
 
@@ -744,6 +756,12 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
         
         # Check for changes in existing lessons
         for key, current_lesson in current_lookup.items():
+            # Cancellations and school events are explicit schedule entries, not
+            # field edits to the original lesson. Their original values remain
+            # available on the schedule item and are rendered as such.
+            if current_lesson.get("type") in ("cancelledLesson", "event"):
+                continue
+
             original_change = self._build_original_lesson_change(current_lesson)
             if original_change:
                 changes.append(original_change)
@@ -800,6 +818,9 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
         self, current: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """Build a synthetic previous lesson from API original_* values."""
+        if current.get("type") in ("cancelledLesson", "event"):
+            return None
+
         if not self._has_original_lesson_values(current):
             return None
 

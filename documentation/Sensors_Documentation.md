@@ -322,11 +322,28 @@ def _get_current_lesson(self):
 
 **Purpose**: Schedule preview for the upcoming week.
 
-**State Values**:
-- `"35"` - Number of lessons next week
-- `"Holidays"` - When on vacation
+**State**: Summarizes active lesson periods, event titles and cancelled periods. A cancelled lesson paired with a replacement event is not counted twice. For example: `6 lessons, 5 subjects; Franziskustag (6 periods); 6 cancelled`.
 
-**Attributes**: Similar to "This Week", but for the following week.
+**Attributes**: Similar to "This Week", with separate counts for lessons, occupied periods, events and cancellations. The `lessons` array retains raw lesson and cancellation entries for detail; event rows expose their title as both `subject` and `event_title`.
+
+```json
+{
+  "total_lessons": 6,
+  "scheduled_periods": 12,
+  "event_periods": 6,
+  "cancelled_periods": 6,
+  "events": [
+    {
+      "title": "Franziskustag",
+      "date": "2026-10-05",
+      "periods": [1, 2, 3, 4, 5, 6],
+      "period_count": 6
+    }
+  ],
+  "lessons_by_day": {"2026-10-06": 6},
+  "scheduled_periods_by_day": {"2026-10-05": 6, "2026-10-06": 6}
+}
+```
 
 ### 8. Changes Detected Sensor
 

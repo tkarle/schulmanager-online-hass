@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Include school events such as Franziskustag in schedule sensors, with event titles and occupied class periods exposed as attributes.
+- Count cancelled lessons and replacement events by occupied period so they do not inflate the active lesson count.
+- Preserve raw cancellation and event entries for detailed schedule views.
+- Keep cancelled lessons and school events out of the detected lesson-change list, and do not classify cancellations as substitutions.
+
 ## 1.1.3
 
 - Fix config entry migration crashing on startup (`AttributeError: version cannot be changed directly, use async_update_entry instead`) on recent Home Assistant Core versions (confirmed on 2026.9.2). The 1.1.2 migration to version 3 (unique_id fix) set `config_entry.version` directly instead of going through `hass.config_entries.async_update_entry(...)`.

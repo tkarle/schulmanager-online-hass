@@ -82,7 +82,7 @@ class SchulmanagerDataUpdateCoordinator(DataUpdateCoordinator):
                     return stale_data
             
             # Get options
-            weeks_ahead = self.options.get("weeks_ahead", DEFAULT_LOOKAHEAD_WEEKS)
+            weeks_ahead = self.options.get("lookahead_weeks", DEFAULT_LOOKAHEAD_WEEKS)
             include_homework = self.options.get("include_homework", True)
             include_grades = self.options.get("include_grades", False)
             include_exams = self.options.get("include_exams", True)

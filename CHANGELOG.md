@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Rewrite the README to document the implemented sensors, events and cancellations, calendars, options, bundled schedule card, services, and dashboard examples.
+- Fix the lookahead option so the configured 1–4 week range is used for schedule requests.
+
 ## 1.2.0
 
 - Include school events such as Franziskustag in schedule sensors, with event titles and occupied class periods exposed as attributes.

@@ -9,6 +9,7 @@ import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
+from zoneinfo import ZoneInfo
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +49,14 @@ def _install_homeassistant_stubs() -> None:
     core.HomeAssistant = object
     sys.modules["homeassistant.core"] = core
     homeassistant.core = core
+
+    util = types.ModuleType("homeassistant.util")
+    dt = types.ModuleType("homeassistant.util.dt")
+    dt.now = lambda: datetime.now(ZoneInfo("Europe/Berlin"))
+    util.dt = dt
+    sys.modules["homeassistant.util"] = util
+    sys.modules["homeassistant.util.dt"] = dt
+    homeassistant.util = util
 
     helpers = types.ModuleType("homeassistant.helpers")
     sys.modules["homeassistant.helpers"] = helpers

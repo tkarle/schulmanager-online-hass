@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.2
+
+- Keep calendar lessons when `subject` is null or empty by falling back to `subject_name`, then `Lesson`.
+- Keep lessons without a class-hour number, including AGs, at their actual start/end times and omit the unavailable class-hour description.
+- Add offline calendar regression tests for subject fallbacks, unnumbered lessons, API class times, substitutions, cancellations, highlighting, range filtering, and replacement/cancellation de-duplication. Fixtures contain synthetic data only.
+
 ## 1.2.1
 
 - Rewrite the README to document the implemented sensors, events and cancellations, calendars, options, bundled schedule card, services, and dashboard examples.

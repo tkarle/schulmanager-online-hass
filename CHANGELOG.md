@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0
+
+- Document existing additional-lesson, manual period hiding, and school-event replacement workflows, including calendar description keys, period ranges, day/week views and helper-sensor requirements.
+- Distinguish the integration, bundled experimental card, and separately configured extended dashboard. Installing this release does not install the private dashboard or its helper configuration.
+- Expand the README's coverage of AG times, cancellations, highlighting controls, original values, field-level changes, data freshness and homework/grade events.
+- Correct the cancellation option description: the default keeps cancellations visible when highlighting is off; enabling the hide option removes cancellation-only groups.
+- Refresh sensor/card references and the documentation index against the current implementation, using synthetic examples only.
+- Retain all 1.2.2 calendar fixes and previous integration extensions. This is a documentation and version update; Python and JavaScript behavior is unchanged.
+
 ## 1.2.2
 
 - Keep calendar lessons when `subject` is null or empty by falling back to `subject_name`, then `Lesson`.

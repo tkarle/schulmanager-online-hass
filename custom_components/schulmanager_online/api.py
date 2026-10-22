@@ -401,11 +401,21 @@ class SchulmanagerAPI:
             response_text = await response.text()
             _LOGGER.debug("📄 Response body (first 500 chars): %s", response_text[:500])
             
-            if response.status == 401:
-                # Token might be invalid, try to re-authenticate once
-                _LOGGER.debug("🔄 Got 401, trying to re-authenticate...")
-                await self.authenticate()
+            if response.status in (401, 403):
+                # A 403 can also mean that the web app bundle version changed.
+                # Refresh authentication and the cached bundle once, then retry.
+                _LOGGER.debug(
+                    "🔄 Got %d, refreshing authentication and bundle version...",
+                    response.status,
+                )
+                self.token = None
+                self.token_expires = None
+                self.bundle_version = None
+                self.bundle_version_expires = None
+                await self.authenticate(institution_id=self.institution_id)
+                bundle_version = await self._ensure_bundle_version()
                 headers = {"Authorization": f"Bearer {self.token}"}
+                payload["bundleVersion"] = bundle_version
                 
                 _LOGGER.debug("🔄 Retrying API call with new token...")
                 async with self.session.post(CALLS_URL, json=payload, headers=headers) as retry_response:
@@ -592,8 +602,31 @@ class SchulmanagerAPI:
                          student_id, start_date, end_date)
             _LOGGER.debug("Schedule request payload: %s", requests)
             
-            response = await self._make_api_call(requests)
-            results = response.get("results", [])
+            response = None
+            schedule_data = None
+            for attempt in range(2):
+                response = await self._make_api_call(requests)
+                results = response.get("results", [])
+                schedule_data = results[0] if results else None
+                nested_status = schedule_data.get("status") if isinstance(schedule_data, dict) else None
+                if nested_status not in (401, 403) or attempt == 1:
+                    break
+
+                if isinstance(schedule_data, dict):
+                    diagnostic = {
+                        key: schedule_data.get(key)
+                        for key in ("status", "error", "message", "code")
+                        if schedule_data.get(key) is not None
+                    }
+                    _LOGGER.warning("Schedule API rejected request: %s", diagnostic)
+                _LOGGER.warning(
+                    "Schedule API returned nested status %s; refreshing authentication and retrying",
+                    nested_status,
+                )
+                self.token = None
+                self.token_expires = None
+                self.bundle_version = None
+                self.bundle_version_expires = None
             
             _LOGGER.debug("Schedule API response - Got %d results", len(results))
             
@@ -625,28 +658,6 @@ class SchulmanagerAPI:
             _LOGGER.debug("Schedule request details - Student: %d, Start: %s, End: %s", 
                          student_id, start_date, end_date)
             raise SchulmanagerAPIError(f"Failed to get schedule: {e}") from e
-
-    async def get_class_hours(self, class_id: int) -> Dict[str, Any]:
-        """Get class hours definition."""
-        requests = [
-            {
-                "method": "schedules/get-class-hours",
-                "data": {"classId": class_id}
-            }
-        ]
-        
-        try:
-            response = await self._make_api_call(requests)
-            responses = response.get("results", [])
-            
-            if not responses:
-                raise SchulmanagerAPIError("No class hours response")
-            
-            return responses[0]
-            
-        except Exception as e:
-            _LOGGER.error("Failed to get class hours for class %d: %s", class_id, e)
-            raise SchulmanagerAPIError(f"Failed to get class hours: {e}") from e
 
     async def get_homework(self, student_id: int) -> Dict[str, Any]:
         """Get homework for a student using the classbook module."""
@@ -700,22 +711,28 @@ class SchulmanagerAPI:
 
     async def get_grades(self, student_id: int) -> Dict[str, Any]:
         """Get grades for a student."""
+        # NOTE: previously used the legacy {"method", "data"} request shape,
+        # which the backend appears to have dropped (every other endpoint has
+        # migrated to moduleName/endpointName/parameters). Aligned with the
+        # same convention used by get_homework/get_exams; not yet verified
+        # against a live account since grades is an opt-in feature.
         requests = [
             {
-                "method": "grades/get-grades",
-                "data": {"studentId": student_id}
+                "moduleName": "grades",
+                "endpointName": "get-grades",
+                "parameters": {"student": {"id": student_id}}
             }
         ]
-        
+
         try:
             response = await self._make_api_call(requests)
             responses = response.get("results", [])
-            
+
             if not responses:
                 raise SchulmanagerAPIError("No grades response")
-            
+
             grades_data = responses[0]
-            grades = grades_data.get("grades", [])
+            grades = grades_data.get("grades", grades_data.get("data", []))
             
             _LOGGER.debug("Found %d grades for student %d", len(grades), student_id)
             

@@ -308,11 +308,12 @@ class SchulmanagerOnlineSensor(CoordinatorEntity, SensorEntity):
         self.institution_city = institution_city
         self.institution_address = institution_address
         
-        # Generate entity ID (reversed format: sensor_type_student_name)
+        # unique_id is keyed by the stable student_id (not the name, which can
+        # collide between siblings or change) - see student_utils/migration
+        # in __init__.py for entities created before this fix.
         student_name = f"{student_info.get('firstname', '')} {student_info.get('lastname', '')}"
-        safe_name = student_name.lower().replace(" ", "_").replace("-", "_")
-        
-        self._attr_unique_id = f"schulmanager_{description.key}_{safe_name}"
+
+        self._attr_unique_id = f"schulmanager_{description.key}_{student_id}"
         self._attr_name = f"{description.name} - {student_name}"
 
     @property

@@ -100,6 +100,9 @@ def _format_lesson_for_attributes(lesson: Dict[str, Any]) -> Dict[str, Any]:
         "class_hour": lesson.get("class_hour_number", "")
     }
 
+    if lesson_type == "event":
+        formatted["event_title"] = full_subject
+
     if lesson.get("original_subject"):
         formatted["original_subject"] = lesson["original_subject"]
     if lesson.get("original_room"):
@@ -156,6 +159,71 @@ def _sanitize_subject_name(subject: str) -> str:
 def _format_lessons_list_attributes(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Format a list of lessons with consistent attribute structure."""
     return [_format_lesson_for_attributes(lesson) for lesson in _as_lesson_list(lessons)]
+
+
+def _get_period_key(lesson: Dict[str, Any], index: int) -> tuple:
+    """Build a stable key for one schedule period, even when its hour is absent."""
+    date = lesson.get("date", "")
+    hour = lesson.get("class_hour_number")
+    if hour not in (None, ""):
+        return date, str(hour)
+
+    start = lesson.get("start_time", "")
+    end = lesson.get("end_time", "")
+    if start or end:
+        return date, start, end
+
+    return date, lesson.get("id") or f"row-{index}"
+
+
+def _get_effective_periods(lessons: List[Dict[str, Any]]) -> Dict[tuple, Dict[str, Any]]:
+    """Return one active lesson or event per period, preferring replacement events."""
+    grouped: Dict[tuple, List[Dict[str, Any]]] = {}
+    for index, lesson in enumerate(lessons):
+        grouped.setdefault(_get_period_key(lesson, index), []).append(lesson)
+
+    effective = {}
+    for key, period_lessons in grouped.items():
+        active = [
+            lesson for lesson in period_lessons
+            if lesson.get("type") not in ("cancelledLesson", "freeHour")
+            and not is_free_hour(lesson)
+        ]
+        if active:
+            effective[key] = next(
+                (lesson for lesson in active if lesson.get("type") == "event"),
+                active[0],
+            )
+    return effective
+
+
+def _get_next_week_events(lessons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Summarize event titles and the periods each event occupies."""
+    events: Dict[tuple, Dict[str, Any]] = {}
+    for period_key, lesson in _get_effective_periods(lessons).items():
+        if lesson.get("type") != "event":
+            continue
+        title = lesson.get("subject_name") or lesson.get("subject") or "Event"
+        event_key = (lesson.get("date", ""), title)
+        event = events.setdefault(event_key, {
+            "title": title,
+            "date": lesson.get("date", ""),
+            "periods": [],
+            "_period_keys": set(),
+        })
+        event["_period_keys"].add(period_key)
+        hour = lesson.get("class_hour_number")
+        if hour not in (None, ""):
+            event["periods"].append(hour)
+
+    result = list(events.values())
+    for event in result:
+        event["periods"] = sorted(
+            set(event["periods"]),
+            key=lambda value: (0, int(value)) if str(value).isdigit() else (1, str(value)),
+        )
+        event["period_count"] = len(event.pop("_period_keys"))
+    return result
 
 
 def get_current_lesson_state(student_data: Dict[str, Any]) -> Optional[str]:
@@ -432,32 +500,73 @@ def get_next_week_summary(student_data: Dict[str, Any]) -> str:
     next_week = _as_lesson_list(_as_dict(student_data).get("next_week", []))
     if not next_week:
         return "No lessons next week"
-    
-    return format_lesson_summary(next_week, include_free_hours=False)
+
+    effective = _get_effective_periods(next_week)
+    lessons = [lesson for lesson in effective.values() if lesson.get("type") != "event"]
+    cancelled_period_count = len({
+        _get_period_key(lesson, index)
+        for index, lesson in enumerate(next_week)
+        if lesson.get("type") == "cancelledLesson"
+    })
+
+    summary_parts = []
+    if lessons:
+        subject_count = len(get_subjects_from_lessons(lessons, exclude_free=True))
+        summary_parts.append(f"{len(lessons)} lessons, {subject_count} subjects")
+    events = _get_next_week_events(next_week)
+    if events:
+        summary_parts.extend(
+            f"{event['title']} ({event['period_count']} periods)" for event in events
+        )
+    if cancelled_period_count:
+        summary_parts.append(f"{cancelled_period_count} cancelled")
+    return "; ".join(summary_parts) or "No lessons next week"
 
 
 def get_next_week_attributes(student_data: Dict[str, Any]) -> Dict[str, Any]:
     """Get attributes for next week sensor."""
     next_week = _as_lesson_list(_as_dict(student_data).get("next_week", []))
-    
-    # Use utility functions for consistent processing
-    actual_lessons = filter_actual_lessons(next_week)
-    subjects = get_subjects_from_lessons(next_week, exclude_free=True)
-    teachers = get_teachers_from_lessons(next_week, exclude_free=True)
-    counts = count_lessons_by_type(next_week)
-    
-    # Count lessons by day (excluding free hours)
+
+    effective = _get_effective_periods(next_week)
+    effective_lessons = list(effective.values())
+    actual_lessons = [
+        lesson for lesson in effective_lessons if lesson.get("type") != "event"
+    ]
+    subjects = get_subjects_from_lessons(actual_lessons, exclude_free=True)
+    teachers = get_teachers_from_lessons(effective_lessons, exclude_free=True)
+    events = _get_next_week_events(next_week)
+    cancelled_lessons = [
+        lesson for lesson in next_week if lesson.get("type") == "cancelledLesson"
+    ]
+
+    # Count effective lessons by day; replacements occupy periods but are events.
     lessons_by_day = {}
-    
     for lesson in actual_lessons:
         date = lesson.get("date", "")
         if date:
             lessons_by_day[date] = lessons_by_day.get(date, 0) + 1
-    
+
+    scheduled_periods_by_day = {}
+    for lesson in effective_lessons:
+        date = lesson.get("date", "")
+        if date:
+            scheduled_periods_by_day[date] = scheduled_periods_by_day.get(date, 0) + 1
+
+    cancelled_periods = len({
+        _get_period_key(lesson, index)
+        for index, lesson in enumerate(next_week)
+        if lesson.get("type") == "cancelledLesson"
+    })
     return {
-        "total_lessons": counts["actual"],
-        "free_hours": counts["free"],
+        "total_lessons": len(actual_lessons),
+        "scheduled_periods": len(effective_lessons),
+        "event_periods": sum(event["period_count"] for event in events),
+        "cancelled_periods": cancelled_periods,
+        "free_hours": sum(1 for lesson in next_week if is_free_hour(lesson)),
         "lessons_by_day": lessons_by_day,
+        "scheduled_periods_by_day": scheduled_periods_by_day,
+        "events": events,
+        "cancelled_lessons": _format_lessons_list_attributes(cancelled_lessons),
         "lessons": _format_lessons_list_attributes(next_week),  # Include all lessons (with free hours)
         "subjects": sorted(list(subjects)),
         "teachers": sorted(list(teachers)),

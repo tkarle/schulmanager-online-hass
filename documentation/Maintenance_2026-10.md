@@ -95,3 +95,70 @@ Official references:
 - https://contributors.home-assistant.io/blog/2026/08/24/device-registry-follow-up-changes/
 - https://raw.githubusercontent.com/home-assistant/core/2026.10.2/homeassistant/helpers/device_registry.py
 - https://raw.githubusercontent.com/home-assistant/core/2026.10.2/homeassistant/helpers/entity_registry.py
+
+## Live acceptance — 23 October 2026
+
+Implementation commit: `74ae9e3ffb46fcffbb3b72e4d0010bc1c9253b3a`.
+Release PR: https://github.com/tkarle/schulmanager-online-hass/pull/3.
+
+Target: HA Core **2026.10.2**, `/config/custom_components/schulmanager_online`.
+The installed baseline was 1.2.2; all 33 live files matched that tag before changes.
+The release includes the 1.3.0 README and changes only seven integration files:
+`__init__.py`, `api.py`, `bundle.py`, `devices.py`, `diagnostics.py`,
+`manifest.json`, `README.md`. The other **28 existing files** retain their hashes,
+including the fixed calendar implementation. All **35 resulting files** match
+expected source hashes.
+
+Verified pre-deployment backup:
+`/config/backups/schulmanager_online/maintenance-20261023T085956+0200/`.
+This contains five original files, before/after hashes and private comparison
+snapshots. The two new helper files did not exist before deployment. No account,
+student or calendar content from those snapshots was copied into this repository.
+
+Installation used staged checksums and atomic per-file replacements with rollback
+on installation failure. `ha core check` passed. One Core restart was requested
+at **09:01:02 Europe/Berlin**, completed successfully, and HA reported RUNNING with
+the integration loaded. A manual refresh returned HTTP 200. A subsequent entry
+reload returned HTTP 200 and `require_restart: false`; the same acceptance checks
+passed again after reload and registry persistence.
+
+| Live check | Result |
+| --- | --- |
+| Entry IDs | Same one entry |
+| Device IDs, identifiers, parent links and user metadata | Same two devices |
+| Entity IDs, unique IDs, device links and user metadata | Same 21 entities |
+| Entity availability | 21 states, zero unavailable |
+| Sensor freshness | `data_status: loaded` |
+| Calendars, fixed interval 22 October–6 November | Counts 0, 1 and 37; every full-event fingerprint unchanged |
+| Bundle discovery source | `detected` |
+| Bundle version / last successful API version | Both `e3cf8c0506` |
+| New integration warnings/errors | Zero through 09:04:15 Europe/Berlin |
+| New registry deprecations / discovery failures | Zero |
+
+The standard HA loader advisory about using a custom integration appeared once;
+this is distinct from a Schulmanager runtime warning. Historical log entries were
+excluded using the activation timestamp. This is a restart/refresh/reload
+observation window, not long-term monitoring. There were no disabled entities in
+this live installation; preservation of disabled/ambiguous records and the
+multiple-entry collision cases is covered by isolated registry regressions.
+Authentication failures, outages and retries were injected only in offline tests.
+AG/null-subject behavior retains the existing offline calendar coverage; no new
+live AG-specific acceptance is claimed.
+
+GitHub checks for the implementation commit:
+
+- [Offline regressions passed](https://github.com/tkarle/schulmanager-online-hass/actions/runs/39914684376).
+- [hassfest passed](https://github.com/tkarle/schulmanager-online-hass/actions/runs/39914684387).
+- [HACS validation](https://github.com/tkarle/schulmanager-online-hass/actions/runs/39914684482)
+  passes integration manifest and `hacs.json`, but its aggregate result still fails
+  on the same pre-existing repository metadata as 1.3.0: issues disabled, no valid
+  topics and license detection `NOASSERTION`. Repository settings and license text
+  were not changed. This limitation does not affect the verified direct deployment.
+
+### Rollback
+
+After checking for intervening edits, restore the five originals from `files/` in
+that backup, remove only the newly added `bundle.py` and `devices.py`, verify the
+saved baseline hashes, run `ha core check` and restart Core once. The backup restores
+the actual prior 1.2.2 installation, including its calendar fix; do not restore an
+older calendar file or a whole-system backup.

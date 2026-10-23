@@ -7,7 +7,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
-    DeviceEntryType,
     async_get as async_get_device_registry,
 )
 from homeassistant.helpers import entity_registry as er
@@ -17,6 +16,7 @@ from .api import SchulmanagerAPI
 from .const import CONF_EMAIL, CONF_PASSWORD, DOMAIN
 from .coordinator import SchulmanagerDataUpdateCoordinator
 from .institution_utils import build_institution_display_info
+from .devices import async_register_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -184,50 +184,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
     
-    # Create devices: one service device and child devices per student
-    try:
-        device_registry = async_get_device_registry(hass)
-        entity_registry = er.async_get(hass)
-        service_device = device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, f"service_{entry.entry_id}")},
-            name="Schulmanager Online",
-            manufacturer="Schulmanager Online",
-            model="Portal",
-            entry_type=DeviceEntryType.SERVICE,
-        )
-        for student in all_students:
-            sid = student.get("id")
-            sname = f"{student.get('firstname', '')} {student.get('lastname', '')}".strip() or "Student"
-
-            # Use both new and legacy identifiers so entities/devices merge
-            ident_new = (DOMAIN, str(sid))  # used by sensors/calendars
-            ident_old = (DOMAIN, f"student_{sid}")  # legacy identifier (pre-merge)
-
-            # Create or get the unified student device with both identifiers
-            student_device = device_registry.async_get_or_create(
-                config_entry_id=entry.entry_id,
-                identifiers={ident_new, ident_old},
-                name=sname,
-                manufacturer="Schulmanager Online",
-                model="Student Schedule",
-                via_device=(DOMAIN, f"service_{entry.entry_id}"),
-            )
-
-            # Best-effort cleanup: if a separate legacy-only device exists without entities, remove it
-            try:
-                legacy_device = device_registry.async_get_device({ident_old})
-                unified_device = device_registry.async_get_device({ident_new, ident_old})
-                if legacy_device and unified_device and legacy_device.id != unified_device.id:
-                    entries = entity_registry.async_entries_for_device(
-                        legacy_device.id, include_disabled_entities=True
-                    )
-                    if not entries:
-                        device_registry.async_remove_device(legacy_device.id)
-            except Exception:  # defensive; cleanup is best-effort only
-                _LOGGER.debug("Legacy device cleanup skipped", exc_info=True)
-    except Exception:
-        _LOGGER.debug("Device registry setup failed", exc_info=True)
+    # Register before platforms so their existing identifiers resolve in this entry.
+    async_register_devices(async_get_device_registry(hass), entry.entry_id, all_students)
 
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

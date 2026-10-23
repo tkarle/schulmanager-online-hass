@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.1
+
+- Register student devices with `via_device_id` and config-entry-scoped identifier lookups. Preserve existing IDs, aliases and user metadata; do not automatically delete or merge ambiguous legacy devices.
+- Discover `bundleVersion` in the current public web app's imported JavaScript chunks, including a unique same-file variable binding. Resolve URLs against redirect/base/resource URLs, retain stable order and bound resource count, depth, size and time.
+- Distinguish detected values, previous detections, last API-confirmed values and the emergency fallback. Cache discovery for one hour and discovery failures for five minutes.
+- Share a single retry budget across HTTP/nested 401/403 and explicit bundle-version rejections. Remove sensitive request/response debug output from the affected path.
+- Add offline public-source fixtures and registry, discovery, cache, authentication and retry regressions; retain all calendar/AG and sensor regressions.
+- Require HA 2026.10.0 in HACS metadata, remove the unsupported manifest `homeassistant` field and rely on HA's own aiohttp dependency.
+
 ## 1.3.0
 
 - Document existing additional-lesson, manual period hiding, and school-event replacement workflows, including calendar description keys, period ranges, day/week views and helper-sensor requirements.

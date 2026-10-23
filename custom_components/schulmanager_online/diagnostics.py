@@ -70,6 +70,8 @@ async def async_get_config_entry_diagnostics(
                 "token_expires": str(getattr(api, "token_expires", None)),
                 "has_bundle_version": bool(getattr(api, "bundle_version", None)),
                 "bundle_version": getattr(api, "bundle_version", None),
+                "bundle_version_source": getattr(api, "bundle_version_source", "not_detected"),
+                "last_successful_bundle_version": getattr(api, "last_successful_bundle_version", None),
             }
             for institution_id, api in api_instances.items()
         },

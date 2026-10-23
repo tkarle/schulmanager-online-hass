@@ -8,6 +8,8 @@ A custom Home Assistant integration for [Schulmanager Online](https://login.schu
 
 The extended school dashboard also supports **additional lessons (Zusatzunterricht), hiding individual periods, and replacing lessons with school events through a separate calendar**. These features use separately configured HA templates and dashboard cards. They are documented in the [dashboard extensions guide](documentation/Dashboard_Extensions.md); installing the integration alone does not install that dashboard.
 
+Version 1.3.1 requires **Home Assistant 2026.10.0 or newer** for entry-scoped device registry APIs. Existing device/entity identifiers and calendar behavior are retained. See the [maintenance notes](documentation/Maintenance_2026-10.md) for bundle discovery, fallback policy and migration details.
+
 ## Feature map
 
 | Feature | Provided by | Details |

@@ -240,3 +240,15 @@ Please remove credentials and personal student information before attaching logs
 - [API troubleshooting](documentation/Schedule_API_Troubleshooting.md)
 
 This project is not affiliated with Schulmanager Online. See [LICENSE](LICENSE) for license terms.
+
+## Authors and acknowledgements
+
+This fork builds on [rwunsch/schulmanager-online-hass](https://github.com/rwunsch/schulmanager-online-hass), originally created by **Robert Wunsch ([@rwunsch](https://github.com/rwunsch))**.
+
+- **Robert Wunsch / @rwunsch** — the original integration and the foundation for its Schulmanager API access, sensors, calendars and documentation.
+- **[@cpetry](https://github.com/cpetry)** — asynchronous-operation and logging improvements, additional checks, and the correction to the tomorrow lesson count.
+- **[@tkarle](https://github.com/tkarle)** — further development and maintenance of this fork, including original lesson values, calendar fixes, Home Assistant compatibility updates, dashboard extensions and their documentation.
+
+Thank you to Robert Wunsch and the upstream contributors for sharing the original project and providing the foundation on which these extensions could be built. We also thank everyone who contributes code, reports issues, tests changes or improves the documentation.
+
+The complete contribution history is available in the [upstream contributors](https://github.com/rwunsch/schulmanager-online-hass/graphs/contributors) and [fork contributors](https://github.com/tkarle/schulmanager-online-hass/graphs/contributors) pages and the Git history.
